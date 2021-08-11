@@ -5,7 +5,7 @@ from transformers import BertJapaneseTokenizer, BertModel
 # print(torch.cuda.is_available())
 # print(torch.cuda.get_device_name())
 
-# 教科書第4章
+
 
 # トークナイザ
 model_name = 'cl-tohoku/bert-base-japanese-whole-word-masking'
@@ -61,6 +61,5 @@ encoding = tokenizer(
     return_tensors='pt'
 )
 print(encoding)
-
 
 

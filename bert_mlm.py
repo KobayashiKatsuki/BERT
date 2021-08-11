@@ -144,4 +144,4 @@ if __name__ == '__main__':
 
     print('result: ----------')
     for t in unmasked_text_list:
-        print(f'{t[0]}')
+        print(t[0])
