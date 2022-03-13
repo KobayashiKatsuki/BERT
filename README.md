@@ -2,11 +2,11 @@
 
 #### 学習（ファインチューニング）
 * fit: pytorch_lightningのTrainerクラスのメソッド
-* train: TransformersのTrainerクラスのメソッド
+* train: Hugging Face transformersのTrainerクラスのメソッド
 * フルスクラッチ：forwardとbackwordで頑張る
 
 plは書籍で使われているけどあんまり一般的でない？
-Trainer覚えよう
+hugging face Trainer覚えよう
 
 #### BERTを扱うクラス設計
 
