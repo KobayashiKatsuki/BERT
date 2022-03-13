@@ -13,7 +13,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torch import nn
 
-from transformers import BertJapaneseTokenizer, BertModel
+from transformers import BertJapaneseTokenizer, BertModel, AutoModel
 from transformers import TrainingArguments, Trainer
 
 from sklearn.model_selection import train_test_split
@@ -36,9 +36,11 @@ class PosiNegaDataset(Dataset):
   
   def __getitem__(self, idx):
     item = { k: torch.tensor(v[idx]) for k, v in self.encodings.items() }
-#         item = { k: torch.tensor(v[idx]).cuda() for k, v in self.encodings.items() }
+    # item = { k: torch.tensor(v[idx], device=torch.device('cuda')) for k, v in self.encodings.items() }
     if self.labels is not None:
       item["labels"] = torch.tensor(self.labels[idx])
+      # item["labels"] = torch.tensor(self.labels[idx], device=torch.device('cuda'))
+
     return item
 
 
@@ -51,10 +53,13 @@ class BertClassifier(nn.Module):
     
     # 事前学習モデル
     self.model = pretrained_model
+
+    # クラス分けするラベル数
+    self.num_labels = 2
     
     # 線形変換層（全結合層）
     # ポジネガ（２カテゴリ）分類なので出力層は2
-    self.classifier = nn.Linear(in_features=768, out_features=2)
+    self.classifier = nn.Linear(in_features=768, out_features=self.num_labels)
     
     # 重み初期化
     nn.init.normal_(self.classifier.weight, std=0.02)
@@ -85,27 +90,39 @@ class PosiNegaTrainer(Trainer):
   def compute_loss(self, model, inputs, return_outputs=False):
     # truth labels
     labels = inputs.get("labels")
-
     # forward pass
     outputs = model(**inputs)
-
     # compute custom loss
     loss_fct = nn.CrossEntropyLoss()
     # loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1))
-    loss = loss_fct(outputs.view(-1, 2), labels.view(-1))
+    loss = loss_fct(outputs.view(-1, model.num_labels), labels.view(-1))
 
     return (loss, outputs) if return_outputs else loss
+    
+  # compute_matricsを定義
+  def compute_metrics(self, p):
+    pred, labels = p
+    pred = np.argmax(pred, axis=1)
+    
+    accuracy = accuracy_score(y_true=labels, y_pred=pred)
+    recall = recall_score(y_true=labels, y_pred=pred)
+    precision = precision_score(y_true=labels, y_pred=pred)
+    f1 = f1_score(y_true=labels, y_pred=pred)
+    
+    return {"accuracy": accuracy, "recall": recall, "precision": precision, "f1": f1}
 
 
 
-if __name__ == '__main__':
-  # print(torch.cuda.is_available())
-
+def BertFineTuning():
+  """
+  ファインチューニング
+  """
   # トークナイザ
   tokenizer = BertJapaneseTokenizer.from_pretrained(MODEL_NAME)
   # 事前学習モデル
   model = BertModel.from_pretrained(MODEL_NAME)
-  # model = model.cuda()  
+  # model = model.cuda()
+  print(model.device)
 
   # データセット用意
   df_dataset = pd.read_csv(
@@ -120,7 +137,7 @@ if __name__ == '__main__':
   # train, val, test分割
   # random_stateはシャッフルの乱数シード固定、stratifyは正例、負例のラベル数均一にする処理
   X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=0, stratify=y)
-  X_val, X_test, y_val, y_test = train_test_split(X_val, y_val, test_size=0.5, random_state=0, stratify=y_val)
+  X_val, X_test, y_val, y_test = train_test_split(X_val, y_val, test_size=0.45, random_state=0, stratify=y_val)
 
   # トークナイザでモデルへのinputとなるようencodingする
   max_len = 256 #512
@@ -155,33 +172,70 @@ if __name__ == '__main__':
   ds_val = PosiNegaDataset(enc_val, y_val)
   ds_test = PosiNegaDataset(enc_test, y_test)
 
-  # DataLoaderを作成
-  batch_size = 8
-  dl_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True)
-  dl_val = DataLoader(ds_val, batch_size=batch_size, shuffle=False)
+  print(ds_train.__len__())
+  print(ds_val.__len__())
+  print(ds_test.__len__())
 
-  # ファインチューニングするBERTモデル
-  bert_classifier = BertClassifier(model)
 
-  # Trainerを作成
-  training_args = TrainingArguments(
-    output_dir='./outputs',
-    num_train_epochs=2,
-    per_device_train_batch_size=8,
-    per_device_eval_batch_size=8,
-    warmup_steps=500,
-    weight_decay=0.01,
-    logging_dir='./logs',
-    logging_steps=10,
-    no_cuda=False,
-  )
+  # # ファインチューニングするBERTモデル
+  # bert_classifier = BertClassifier(model)
 
-  trainer = PosiNegaTrainer(
-    model=bert_classifier,
-    args=training_args,
-    train_dataset=ds_train,
-    eval_dataset=ds_val,
-  )
+  # # Trainerを作成
+  # training_args = TrainingArguments(
+  #   output_dir='./outputs',
+  #   num_train_epochs=1,
+  #   evaluation_strategy="steps",
+  #   eval_steps=500,
+  #   per_device_train_batch_size=8,
+  #   per_device_eval_batch_size=8,
+  #   warmup_steps=500,
+  #   weight_decay=0.01,
+  #   load_best_model_at_end=True,
+  #   logging_dir='./logs',
+  #   logging_steps=10,
+  #   no_cuda=False,
+  # )
 
-  # ファインチューニング
-  trainer.train()
+  # trainer = PosiNegaTrainer(
+  #   model=bert_classifier,
+  #   args=training_args,
+  #   train_dataset=ds_train,
+  #   eval_dataset=ds_val,
+  # )
+
+  # # ファインチューニング
+  # trainer.train()
+  # test_trainer = trainer
+
+
+  # テスト
+  model_path = "./outputs/checkpoint-500"
+  model = BertModel.from_pretrained(model_path)
+  trained_model = BertClassifier(model)
+  test_trainer = PosiNegaTrainer(trained_model)
+
+  # 推論
+  with torch.no_grad():
+    raw_pred, _, _ = test_trainer.predict(ds_test)
+
+  y_pred = np.argmax(raw_pred, axis=1)
+
+  print('')
+  print(ds_test.__len__())
+  print(len(y_test))
+
+  accuracy = accuracy_score(y_true=y_test, y_pred=y_pred)
+  recall = recall_score(y_true=y_test, y_pred=y_pred)
+  precision = precision_score(y_true=y_test, y_pred=y_pred)
+  f1 = f1_score(y_true=y_test, y_pred=y_pred)
+
+  print(accuracy, recall, precision, f1)
+
+  cm = confusion_matrix(y_test, y_pred)
+  print(cm)
+
+
+
+if __name__ == '__main__':
+  # print(torch.cuda.is_available())
+  BertFineTuning()
