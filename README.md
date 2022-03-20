@@ -3,7 +3,7 @@
 #### 学習（ファインチューニング）
 * fit: pytorch_lightningのTrainerクラスのメソッド
 * train: Hugging Face transformersのTrainerクラスのメソッド
-* フルスクラッチ：forwardとbackwordで頑張る
+* フルスクラッチ：forwardとbackwardで頑張る
 
 plは書籍で使われているけどあんまり一般的でない？
 hugging face Trainer覚えよう
